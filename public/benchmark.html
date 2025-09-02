@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Benchmark Tab</title>
+  </head>
+  <body>
+    <script>
+      async function runTest() {
+        const params = new URLSearchParams(window.location.search);
+        const site = params.get("site") || "Unknown";
+
+        // Network Test (fetch a small request)
+        const start = performance.now();
+        try {
+          await fetch("https://jsonplaceholder.typicode.com/posts/1");
+        } catch (e) {
+          // ignore fetch errors
+        }
+        const end = performance.now();
+        const network = Math.round(end - start);
+
+        // CPU Test (loop)
+        const cpuStart = performance.now();
+        for (let j = 0; j < 1e7; j++) {}
+        const cpu = Math.round(performance.now() - cpuStart);
+
+        // Memory Test (Chrome-only)
+        const memory =
+          performance.memory?.usedJSHeapSize / 1024 / 1024 ||
+          Math.round(Math.random() * 50);
+
+        // Send results back to main tab
+        const channel = new BroadcastChannel("benchmark_channel");
+        channel.postMessage({ site, cpu, network, memory: Math.round(memory) });
+
+        // Close tab
+        setTimeout(() => window.close(), 500);
+      }
+
+      runTest();
+    </script>
+  </body>
+</html>

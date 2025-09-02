@@ -1,37 +1,117 @@
 import React, { useState, useEffect } from "react";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  Legend,
+  CartesianGrid,
+  ResponsiveContainer,
+} from "recharts";
 
-// Generate sample CPU & Memory data
-const generateData = () =>
-  Array.from({ length: 10 }, (_, i) => ({
-    name: `T${i + 1}`,
-    CPU: Math.floor(Math.random() * 100),
-    Memory: Math.floor(Math.random() * 100),
-  }));
+function App() {
+  const [results, setResults] = useState([]);
+  const [showDashboard, setShowDashboard] = useState(false);
 
-export default function App() {
-  const [data, setData] = useState(generateData());
+  // List of real URLs to pick randomly
+  const allUrls = [
+    "https://example.com",
+    "https://github.com",
+    "https://wikipedia.org",
+    "https://cnn.com",
+    "https://nytimes.com",
+    "https://bbc.com",
+    "https://reddit.com",
+    "https://stackoverflow.com",
+    "https://twitter.com",
+    "https://linkedin.com",
+    "https://red.com",	
+  ];
 
+  // Broadcast channel to receive results
   useEffect(() => {
-    const interval = setInterval(() => setData(generateData()), 1000);
-    return () => clearInterval(interval);
+    const channel = new BroadcastChannel("benchmark_channel");
+    channel.onmessage = (event) => {
+      setResults((prev) => [...prev, event.data]);
+    };
+    return () => channel.close();
   }, []);
 
+  const runBenchmark = () => {
+    setResults([]);
+    setShowDashboard(true);
+
+    // Pick 5 random URLs
+    const shuffled = allUrls.sort(() => 0.5 - Math.random());
+    const testUrls = shuffled.slice(0, 5);
+
+    testUrls.forEach((url) => {
+      // encode URL to pass as query param
+      window.open(`/benchmark.html?site=${encodeURIComponent(url)}`, "_blank", "width=400,height=300");
+    });
+  };
+
   return (
-    <div className="min-h-screen p-4 bg-gray-100">
-      <h1 className="text-3xl font-bold text-center mb-6">
-        Project 1 Dashboard
-      </h1>
-      <div className="flex justify-center">
-        <LineChart width={700} height={350} data={data}>
-          <CartesianGrid stroke="#ccc" />
-          <XAxis dataKey="name" />
-          <YAxis />
-          <Tooltip />
-          <Line type="monotone" dataKey="CPU" stroke="#8884d8" />
-          <Line type="monotone" dataKey="Memory" stroke="#82ca9d" />
-        </LineChart>
+    <div className="p-6">
+      <div className="flex justify-center mt-20 mb-12">
+        <button
+          className="px-6 py-3 bg-blue-600 text-white text-lg rounded-lg shadow-md"
+          onClick={runBenchmark}
+        >
+          Benchmark
+        </button>
       </div>
+
+      {showDashboard && (
+        <div className="bg-white shadow-md rounded-lg p-6 max-w-4xl mx-auto">
+          <h2 className="text-xl font-semibold mb-4 text-center">
+            Tab Benchmark Results
+          </h2>
+
+          {results.length === 0 && (
+            <p className="text-gray-500 text-center">Waiting for results...</p>
+          )}
+
+          {results.length > 0 && (
+            <div className="space-y-8">
+              {/* Raw Results List */}
+              <ul className="space-y-2">
+                {results.map((r, i) => (
+                  <li
+                    key={i}
+                    className="border-b border-gray-200 pb-2 flex justify-between"
+                  >
+                    <span className="font-medium">{r.site}</span>
+                    <span>
+                      CPU: {r.cpu}ms | Network: {r.network}ms | Memory:{" "}
+                      {r.memory}MB
+                    </span>
+                  </li>
+                ))}
+              </ul>
+
+              {/* Chart */}
+              <div className="h-80">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={results}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="site" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Line type="monotone" dataKey="cpu" stroke="#8884d8" />
+                    <Line type="monotone" dataKey="network" stroke="#82ca9d" />
+                    <Line type="monotone" dataKey="memory" stroke="#ffc658" />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+export default App;
