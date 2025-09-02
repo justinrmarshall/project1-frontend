@@ -4,64 +4,96 @@
   <meta charset="UTF-8" />
   <title>Benchmark Runner</title>
   <style>
-    html, body { height: 100%; margin: 0; }
+    html, body { height: 100%; margin: 0; font: 14px/1.3 system-ui, sans-serif; }
     iframe { width: 100%; height: 100%; border: 0; }
+    .status { position: absolute; top: 8px; left: 8px; background:#0008; color:#fff; padding:6px 8px; border-radius:6px; }
   </style>
 </head>
 <body>
+  <div class="status">Starting…</div>
   <script>
     (async function () {
       const params = new URLSearchParams(location.search);
       const site  = params.get("site")  || "about:blank";
       const runId = Number(params.get("runId") || Date.now());
       const index = Number(params.get("index") || 0);
+      const statusEl = document.querySelector(".status");
 
-      // Begin measuring load time of the external page by loading it in an iframe
+      function post(data) {
+        if (window.opener && window.opener.postMessage) {
+          window.opener.postMessage(data, "*");
+        }
+      }
+
+      // Safety timeout (e.g., site blocks iframing or never finishes)
+      const MAX_TIMEOUT_MS = 15000; // 15s
+      let timeoutHit = false;
+      const killTimer = setTimeout(() => {
+        timeoutHit = true;
+        const payload = {
+          type: "benchmarkResult",
+          runId, index, site,
+          cpuTime: 0,
+          memoryUsage: 0,
+          networkLatency: MAX_TIMEOUT_MS,
+          loadTime: MAX_TIMEOUT_MS
+        };
+        post(payload);
+        statusEl.textContent = "Timeout reached.";
+        setTimeout(() => window.close(), 400);
+      }, MAX_TIMEOUT_MS);
+
+      // Start measuring load with an iframe
       const start = performance.now();
       const iframe = document.createElement("iframe");
       iframe.src = site;
       document.body.appendChild(iframe);
+      statusEl.textContent = `Loading ${site}…`;
 
-      // When the iframe finishes loading, we have the real load time
       iframe.onload = async () => {
+        if (timeoutHit) return;
+        clearTimeout(killTimer);
         const loadTime = performance.now() - start;
 
-        // CPU test: simple math loop
+        // CPU test
+        statusEl.textContent = "CPU test…";
         const cpuStart = performance.now();
         for (let i = 0; i < 1e7; i++) { Math.sqrt(i); }
         const cpuTime = performance.now() - cpuStart;
 
-        // Network latency: attempt a fetch to the same site (no-cors still yields timing)
-        const netStart = performance.now();
-        try {
-          await fetch(site, { mode: "no-cors", cache: "no-store" });
-        } catch (e) { /* ignore errors caused by CORS */ }
-        const networkLatency = performance.now() - netStart;
+        // Network latency probe (with a single retry)
+        statusEl.textContent = "Network test…";
+        async function probe() {
+          const t0 = performance.now();
+          try {
+            await fetch(site, { mode: "no-cors", cache: "no-store" });
+          } catch (e) { /* expected for many sites due to CORS */ }
+          return performance.now() - t0;
+        }
+        let networkLatency = await probe();
+        if (!isFinite(networkLatency) || networkLatency <= 0) {
+          networkLatency = await probe();
+        }
 
-        // Memory usage (Chrome only)
+        // Memory (Chrome only)
         let memoryUsage = 0;
         if (performance.memory && performance.memory.usedJSHeapSize) {
-          memoryUsage = performance.memory.usedJSHeapSize / (1024 * 1024); // MB
+          memoryUsage = performance.memory.usedJSHeapSize / (1024 * 1024);
         }
 
-        // Post result back to opener
-        if (window.opener && window.opener.postMessage) {
-          window.opener.postMessage(
-            {
-              type: "benchmarkResult",
-              runId,
-              index,
-              site,
-              cpuTime,
-              memoryUsage,
-              networkLatency,
-              loadTime
-            },
-            "*"
-          );
-        }
+        const payload = {
+          type: "benchmarkResult",
+          runId,
+          index,
+          site,
+          cpuTime,
+          memoryUsage,
+          networkLatency,
+          loadTime
+        };
+        post(payload);
 
-        // Close this tab shortly after reporting
+        statusEl.textContent = "Done";
         setTimeout(() => window.close(), 400);
       };
     })();
