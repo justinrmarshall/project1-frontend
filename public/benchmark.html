@@ -1,44 +1,70 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Benchmark Tab</title>
-  </head>
-  <body>
-    <script>
-      async function runTest() {
-        const params = new URLSearchParams(window.location.search);
-        const site = params.get("site") || "Unknown";
+<head>
+  <meta charset="UTF-8" />
+  <title>Benchmark Runner</title>
+  <style>
+    html, body { height: 100%; margin: 0; }
+    iframe { width: 100%; height: 100%; border: 0; }
+  </style>
+</head>
+<body>
+  <script>
+    (async function () {
+      const params = new URLSearchParams(location.search);
+      const site  = params.get("site")  || "about:blank";
+      const runId = Number(params.get("runId") || Date.now());
+      const index = Number(params.get("index") || 0);
 
-        // Network Test (fetch a small request)
-        const start = performance.now();
-        try {
-          await fetch("https://jsonplaceholder.typicode.com/posts/1");
-        } catch (e) {
-          // ignore fetch errors
-        }
-        const end = performance.now();
-        const network = Math.round(end - start);
+      // Begin measuring load time of the external page by loading it in an iframe
+      const start = performance.now();
+      const iframe = document.createElement("iframe");
+      iframe.src = site;
+      document.body.appendChild(iframe);
 
-        // CPU Test (loop)
+      // When the iframe finishes loading, we have the real load time
+      iframe.onload = async () => {
+        const loadTime = performance.now() - start;
+
+        // CPU test: simple math loop
         const cpuStart = performance.now();
-        for (let j = 0; j < 1e7; j++) {}
-        const cpu = Math.round(performance.now() - cpuStart);
+        for (let i = 0; i < 1e7; i++) { Math.sqrt(i); }
+        const cpuTime = performance.now() - cpuStart;
 
-        // Memory Test (Chrome-only)
-        const memory =
-          performance.memory?.usedJSHeapSize / 1024 / 1024 ||
-          Math.round(Math.random() * 50);
+        // Network latency: attempt a fetch to the same site (no-cors still yields timing)
+        const netStart = performance.now();
+        try {
+          await fetch(site, { mode: "no-cors", cache: "no-store" });
+        } catch (e) { /* ignore errors caused by CORS */ }
+        const networkLatency = performance.now() - netStart;
 
-        // Send results back to main tab
-        const channel = new BroadcastChannel("benchmark_channel");
-        channel.postMessage({ site, cpu, network, memory: Math.round(memory) });
+        // Memory usage (Chrome only)
+        let memoryUsage = 0;
+        if (performance.memory && performance.memory.usedJSHeapSize) {
+          memoryUsage = performance.memory.usedJSHeapSize / (1024 * 1024); // MB
+        }
 
-        // Close tab
-        setTimeout(() => window.close(), 500);
-      }
+        // Post result back to opener
+        if (window.opener && window.opener.postMessage) {
+          window.opener.postMessage(
+            {
+              type: "benchmarkResult",
+              runId,
+              index,
+              site,
+              cpuTime,
+              memoryUsage,
+              networkLatency,
+              loadTime
+            },
+            "*"
+          );
+        }
 
-      runTest();
-    </script>
-  </body>
+        // Close this tab shortly after reporting
+        setTimeout(() => window.close(), 400);
+      };
+    })();
+  </script>
+</body>
 </html>
